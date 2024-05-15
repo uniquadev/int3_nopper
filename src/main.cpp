@@ -100,7 +100,7 @@ private:
 			if (fPatches > 0)
 			{
 				LogInfo("Patched %lld int3 in function %s.", fPatches, func->GetSymbol()->GetRawName().c_str());
-				view->UpdateAnalysis();
+				func->Reanalyze();
 			}
 			fsCounter++;
 			task->SetProgressText(std::format("Patching int3 instructions {}/{}", fsCounter, fsLen));
