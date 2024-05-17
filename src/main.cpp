@@ -6,6 +6,7 @@
 #include <lowlevelilinstruction.h>
 #include <thread>
 #include <format>
+#include <queue>
 
 using namespace BinaryNinja;
 
@@ -26,6 +27,9 @@ public:
 private:
 	Ref<BinaryView> view;
 	Ref<Architecture> arch;
+	Ref<BackgroundTask> task;
+
+	std::queue<Ref<Function>> functions;
 	int64_t patched = 0;
 
 	void nopInt3(uint64_t ea)
@@ -35,7 +39,7 @@ private:
 		patched++;
 	}
 
-	uint64_t handleBlock(BasicBlock* block)
+	size_t handleBlock(BasicBlock* block)
 	{
 		if (block->GetLength() < 2)
 			return 0;
@@ -79,6 +83,25 @@ private:
 		return patches;
 	}
 
+	size_t handleFunction(Function* func)
+	{
+	
+		auto llil = func->GetLowLevelIL();
+		if (!llil)
+			return 0;
+
+		size_t patched = 0;
+		for (auto& block : llil->GetBasicBlocks())
+		{
+			if (task->IsCancelled())
+				return 0;
+			patched += handleBlock(block);
+		}
+		if (patched > 0)
+			func->Reanalyze(BNFunctionUpdateType::FullAutoFunctionUpdate);
+		return patched;
+	}
+
 	void run()
 	{
 		if (arch->GetName() != "x86_64")
@@ -87,34 +110,30 @@ private:
 			return;
 		}
 
-		const Ref<BackgroundTask> task = new BackgroundTask("Patching int3 instructions", true);
-		const auto& fs = view->GetAnalysisFunctionList();
-		const auto& fsLen = fs.size();
+		task = new BackgroundTask("Patching int3 instructions", true);
+		
+		for (const auto& func : view->GetAnalysisFunctionList())
+			functions.push(func);
 
-		view->SetAnalysisHold(true);
-		int64_t fsCounter = 0;
-		for (const auto& func : fs)
+		
+		size_t patched = 0;
+		while (!functions.empty())
 		{
-			auto llil = func->GetLowLevelIL();
-			if (!llil)
-				continue;
+			if (task->IsCancelled())
+				return;
 
-			uint64_t fPatches = 0;
-			for (auto& block : llil->GetBasicBlocks())
-			{
-				if (task->IsCancelled())
-					return;
-				fPatches += handleBlock(block);
-			}
-			if (fPatches > 0)
-			{
-				LogInfo("Patched %lld int3 in function %s.", fPatches, func->GetSymbol()->GetRawName().c_str());
-				func->Reanalyze(BNFunctionUpdateType::FullAutoFunctionUpdate);
-			}
-			fsCounter++;
-			task->SetProgressText(std::format("Patching int3 instructions {}/{}", fsCounter, fsLen));
+			auto func = functions.front();
+			auto fpatched = handleFunction(func);
+			patched += fpatched;
+
+			if (fpatched > 0)
+				functions.push(func); // requeue function for further analysis
+			functions.pop();
+
+			LogInfo("Patched %lld int3 in function %s.", fpatched, func->GetSymbol()->GetRawName().c_str());
+			task->SetProgressText(std::format("Patching int3, {} functions left", functions.size()));
 		}
-		view->SetAnalysisHold(false);
+
 		LogInfo("Patched %lld int3 instructions.", patched);
 		task->Finish();
 	}
