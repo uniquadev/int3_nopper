@@ -3,6 +3,7 @@
 
 #include <cinttypes>
 #include <binaryninjaapi.h>
+#include <lowlevelilinstruction.h>
 #include <thread>
 #include <format>
 
@@ -36,53 +37,46 @@ private:
 
 	uint64_t handleBlock(BasicBlock* block)
 	{
-		if (block->GetLength() < 1)
+		if (block->GetLength() < 2)
 			return 0;
 
-		const auto end = block->GetEnd();
-		auto ea = block->GetStart();
+		auto llil = block->GetLowLevelILFunction();
+		LowLevelILInstruction last_nonint3;
+		LowLevelILInstruction last_inst;
+
+		last_nonint3 = llil->GetInstruction(block->GetEnd()-2);
+		last_inst = llil->GetInstruction(block->GetEnd()-1);
+
+		if (last_inst.operation != LLIL_BP)
+			return 0;
+
+		uint8_t byte = 0;
+		if (!view->Read(&byte, last_inst.address, 1))
+			return 0;
 		
-		while (ea < end)
+		if (byte != 0xCC)
+			return 0;
+		
+		if (last_nonint3.operation == LLIL_CALL || last_nonint3.operation == LLIL_RET)
+			return 0;
+
+		uint64_t patches = 0;
+		uint64_t ea = last_inst.address;
+		do
 		{
-			const auto len = view->GetInstructionLength(arch, ea);
-			if (len == 0)
-				return 0;
+			patches++; ea++;
+		} while (view->Read(&byte, ea, 1) && byte == 0xCC);
 
-			if (len != 1)
-			{
-				NEXT_INST:
-				ea += len;
-				continue;
-			}
-
-			uint8_t byte = 0;
-			if (!view->Read(&byte, ea, 1))
-				return 0;
-
-			if (byte != 0xCC)
-				goto NEXT_INST;
-			
-			// start reading int3 instructions
-			uint64_t patches = 0;
-			do
-			{
-				patches++;
-				ea++;
-			} while (view->Read(&byte, ea, 1) && byte == 0xCC);
-			
-			// ignore compiler generated int3 instructions
-			int64_t start_ea = ea - patches;
-			if (patches > 7)
-			{
-				LogWarn("Ignoring %lld int3 instructions at %llx", patches, start_ea);
-				return 0;
-			}
-
-			for (uint64_t i = 0; i < patches; i++)
-				nopInt3(start_ea + i);
-			return patches;
+		if (patches > 10)
+		{
+			LogWarn("Skipping %lld int3 instructions at %llx", patches, last_inst.address);
+			return 0;
 		}
-		return 0;
+		
+		for (uint64_t i = 0; i < patches; i++)
+			nopInt3(last_inst.address + i);
+		
+		return patches;
 	}
 
 	void run()
@@ -101,8 +95,12 @@ private:
 		int64_t fsCounter = 0;
 		for (const auto& func : fs)
 		{
+			auto llil = func->GetLowLevelIL();
+			if (!llil)
+				continue;
+
 			uint64_t fPatches = 0;
-			for (auto& block : func->GetBasicBlocks())
+			for (auto& block : llil->GetBasicBlocks())
 			{
 				if (task->IsCancelled())
 					return;
