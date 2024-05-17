@@ -127,10 +127,12 @@ private:
 			patched += fpatched;
 
 			if (fpatched > 0)
+			{
 				functions.push(func); // requeue function for further analysis
+				LogInfo("Patched %lld int3 in function %s.", fpatched, func->GetSymbol()->GetRawName().c_str());
+			}
 			functions.pop();
 
-			LogInfo("Patched %lld int3 in function %s.", fpatched, func->GetSymbol()->GetRawName().c_str());
 			task->SetProgressText(std::format("Patching int3, {} functions left", functions.size()));
 		}
 
