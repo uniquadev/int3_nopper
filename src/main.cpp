@@ -10,6 +10,8 @@
 
 using namespace BinaryNinja;
 
+auto logger = Logger("Int3Nopper");
+
 class Int3Nopper {
 public:
 	Int3Nopper(BinaryView* view)
@@ -73,7 +75,7 @@ private:
 
 		if (patches > 10)
 		{
-			LogWarn("Skipping %lld int3 instructions at %llx", patches, last_inst.address);
+			logger.LogWarn("Skipping %lld int3 instructions at %llx", patches, last_inst.address);
 			return 0;
 		}
 		
@@ -106,7 +108,7 @@ private:
 	{
 		if (arch->GetName() != "x86_64")
 		{
-			LogError("This plugin only supports x86_64 architecture.");
+			logger.LogError("This plugin only supports x86_64 architecture.");
 			return;
 		}
 
@@ -129,14 +131,14 @@ private:
 			if (fpatched > 0)
 			{
 				functions.push(func); // requeue function for further analysis
-				LogInfo("Patched %lld int3 in function %s.", fpatched, func->GetSymbol()->GetRawName().c_str());
+				logger.LogInfo("Patched %lld int3 in function %s.", fpatched, func->GetSymbol()->GetRawName().c_str());
 			}
 			functions.pop();
 
 			task->SetProgressText(std::format("Patching int3, {} functions left", functions.size()));
 		}
 
-		LogInfo("Patched %lld int3 instructions.", patched);
+		logger.LogInfo("Patched %lld int3 instructions.", patched);
 		task->Finish();
 	}
 };
