@@ -68,7 +68,7 @@ private:
 			{
 				patches++;
 				ea++;
-			} while (ea < end && view->Read(&byte, ea, 1) && byte == 0xCC);
+			} while (view->Read(&byte, ea, 1) && byte == 0xCC);
 			
 			// ignore compiler generated int3 instructions
 			int64_t start_ea = ea - patches;
