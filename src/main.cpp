@@ -73,7 +73,7 @@ private:
 					return 0;
 				}
 
-				for (int64_t i = 0; i < patches; i++)
+				for (uint64_t i = 0; i < patches; i++)
 					nopInt3(start_ea + i);
 				return patches;
 			}
