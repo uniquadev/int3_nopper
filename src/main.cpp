@@ -68,10 +68,10 @@ private:
 			{
 				patches++;
 				ea++;
-			} while (view->Read(&byte, ea, 1) && byte == 0xCC);
+			} while (ea < end && view->Read(&byte, ea, 1) && byte == 0xCC);
 			
 			// ignore compiler generated int3 instructions
-			int64_t start_ea = ea - patches - 1;
+			int64_t start_ea = ea - patches;
 			if (patches > 7)
 			{
 				LogWarn("Ignoring %lld int3 instructions at %llx", patches, start_ea);
