@@ -42,7 +42,6 @@ private:
 		const auto end = block->GetEnd();
 		auto ea = block->GetStart();
 		
-		uint64_t patches = 0;
 		while (ea < end)
 		{
 			const auto len = view->GetInstructionLength(arch, ea);
@@ -57,13 +56,26 @@ private:
 
 				if (byte != 0xCC)
 					goto NEXT_INST;
-					
+				
+				// start reading int3 instructions
+				uint64_t patches = 0;
 				do
 				{
-					nopInt3(ea);
 					patches++;
 					ea++;
 				} while (view->Read(&byte, ea, 1) && byte == 0xCC);
+				
+				// ignore compiler generated int3 instructions
+				int64_t start_ea = ea - patches - 1;
+				if (patches > 7)
+				{
+					LogWarn("Ignoring %lld int3 instructions at %llx", patches, start_ea);
+					return 0;
+				}
+
+				for (int64_t i = 0; i < patches; i++)
+					nopInt3(start_ea + i);
+				return patches;
 			}
 			else
 			{
@@ -71,7 +83,7 @@ private:
 				ea += len;
 			}
 		}
-		return patches;
+		return 0;
 	}
 
 	void run()
