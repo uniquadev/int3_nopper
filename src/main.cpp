@@ -1,4 +1,4 @@
-// (c) 2011 uniquadev
+// (c) 2023 uniquadev
 // This code is licensed under MIT license
 
 #include <cinttypes>
@@ -41,12 +41,23 @@ private:
 		patched++;
 	}
 
+	void nopInt3s(uint64_t ea, size_t count)
+	{
+		std::string nop(count, '\x90');
+		view->Write(ea, nop.data(), count);
+		view->SetCommentForAddress(ea, std::format("int3 ({})", count));
+		patched += count;
+	}
+
 	size_t handleBlock(BasicBlock* block)
 	{
 		if (block->GetLength() < 2)
 			return 0;
 
 		auto llil = block->GetLowLevelILFunction();
+		if (!llil)
+			return 0;
+			
 		LowLevelILInstruction last_nonint3;
 		LowLevelILInstruction last_inst;
 
@@ -55,12 +66,9 @@ private:
 
 		if (last_inst.operation != LLIL_BP)
 			return 0;
-
-		uint8_t byte = 0;
-		if (!view->Read(&byte, last_inst.address, 1))
-			return 0;
 		
-		if (byte != 0xCC)
+		uint8_t byte = 0;
+		if (!view->Read(&byte, last_inst.address, 1) || byte != 0xCC)
 			return 0;
 		
 		if (last_nonint3.operation == LLIL_CALL || last_nonint3.operation == LLIL_RET)
@@ -75,13 +83,11 @@ private:
 
 		if (patches > 10)
 		{
-			logger.LogWarn("Skipping %lld int3 instructions at %llx", patches, last_inst.address);
+			logger.LogDebug("Skipping %lld int3 instructions at %llx", patches, last_inst.address);
 			return 0;
 		}
-		
-		for (uint64_t i = 0; i < patches; i++)
-			nopInt3(last_inst.address + i);
-		
+
+		nopInt3s(last_inst.address, patches);
 		return patches;
 	}
 
@@ -106,7 +112,7 @@ private:
 
 	void run()
 	{
-		if (arch->GetName() != "x86_64")
+		if (arch->GetName() != "x86_64" && arch->GetName() != "x86")
 		{
 			logger.LogError("This plugin only supports x86_64 architecture.");
 			return;
@@ -118,6 +124,7 @@ private:
 			functions.push(func);
 
 		
+		auto start = std::chrono::high_resolution_clock::now();
 		size_t patched = 0;
 		while (!functions.empty())
 		{
@@ -137,8 +144,10 @@ private:
 
 			task->SetProgressText(std::format("Patching int3, {} functions left", functions.size()));
 		}
+		auto end = std::chrono::high_resolution_clock::now();
+		auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
 
-		logger.LogInfo("Patched %lld int3 instructions.", patched);
+		logger.LogInfo("Patched %lld int3 instructions, in %lld seconds.", patched, duration);
 		task->Finish();
 	}
 };
